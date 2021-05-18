@@ -67,18 +67,34 @@ class Colr:
     grey   = 1.0, 1.0, 1.0, 0.4
     black  = 0.0, 0.0, 0.0, 1.0
     yellow = 1.0, 1.0, 0.0, 0.6
-    brown  = 0.15, 0.15, 0.15, 0.20
 
 
-class RotDat:
+class TransDat:
+    '''
+    Transformation Data
+    values stored here get used for rotation
+    '''
     placeholder = True
 
 
-# Refreshes mesh drawing in 3D view and updates mesh coordinate
-# data so ref_pts are drawn at correct locations.
-# Using editmode_toggle to do this seems hackish, but editmode_toggle seems
-# to be the only thing that updates both drawing and coordinate info.
+def set_transform_data_none():
+    TransDat.piv_norm = None  # Vector
+    TransDat.new_ang_r = None
+    TransDat.ang_diff_r = None  # float
+    TransDat.axis_lock = None  # 'X', 'Y', 'Z'
+    TransDat.lock_pts = None
+    TransDat.rot_pt_pos = None
+    TransDat.rot_pt_neg = None
+    TransDat.arc_pts = None
+
+
 def editmode_refresh():
+    '''
+    Refreshes mesh drawing in 3D view and updates mesh coordinate
+    data so ref_pts are drawn at correct locations.
+    Using editmode_toggle to do this seems hackish, but editmode_toggle seems
+    to be the only thing that updates both drawing and coordinate info.
+    '''
     if bpy.context.mode == "EDIT_MESH":
         bpy.ops.object.editmode_toggle()
         bpy.ops.object.editmode_toggle()
@@ -122,6 +138,14 @@ def flts_alm_eq(flt_a, flt_b):
     return flt_a > (flt_b - tol) and flt_a < (flt_b + tol)
 
 
+# assume both float lists are same size?
+def flt_lists_alm_eq(ls_a, ls_b, tol=0.001):
+    for i in range(len(ls_a)):
+        if not (ls_a[i] > (ls_b[i] - tol) and ls_a[i] < (ls_b[i] + tol)):
+            return False
+    return True
+
+
 # todo : replace with flt_lists_alm_eq?
 def vec3s_alm_eq(vec_a, vec_b):
     X, Y, Z = 0, 1, 2
@@ -130,14 +154,6 @@ def vec3s_alm_eq(vec_a, vec_b):
             if flts_alm_eq(vec_a[Z], vec_b[Z]):
                 return True
     return False
-
-
-# assume both float lists are same size?
-def flt_lists_alm_eq(ls_a, ls_b, tol=0.001):
-    for i in range(len(ls_a)):
-        if not (ls_a[i] > (ls_b[i] - tol) and ls_a[i] < (ls_b[i] + tol)):
-            return False
-    return True
 
 
 class MenuStore:
@@ -434,11 +450,13 @@ class TempPoint():
             print("  [" + str(i) + "]:", [self.ls[i]])
 
 
-# Basically this is just a "wrapper" around a 3D coordinate (Vector type)
-# to centralize certain Reference Point features and make them easier to
-# work with.
-# note: if co3d is None, point does not "exist"
 class ReferencePoint:
+    '''
+    Basically this is just a "wrapper" around a 3D coordinate (Vector type)
+    to centralize certain Reference Point features and make them easier to
+    work with.
+    note: if co3d is None, point does not "exist"
+    '''
     def __init__(self, ptype, colr, co3d=None):
         self.ptype = ptype  # debug?
         self.colr = colr  # color (tuple), for displaying point in 3D view
@@ -470,22 +488,13 @@ def init_ref_pts(self):
         ReferencePoint("anc", Colr.red),
         ReferencePoint("piv", Colr.yellow)
     ]
-    # todo : move this part of initialization elsewhere?
-    RotDat.piv_norm = None
-    RotDat.new_ang_r = None
-    RotDat.ang_diff_r = None
-    RotDat.axis_lock = None
-    RotDat.lock_pts = None
-    RotDat.rot_pt_pos = None
-    RotDat.rot_pt_neg = None
-    RotDat.arc_pts = None
 
 
 def set_piv(self):
     #if self.pt_cnt == 2:
     if self.pt_cnt == 3:
-        rpts = [p.co3d for p in self.pts]
-        RotDat.piv_norm = geometry.normal(*rpts)
+        rpts = tuple(p.co3d for p in self.pts)
+        TransDat.piv_norm = geometry.normal(rpts)
 
 def set_mouse_highlight(self):
     if self.pt_cnt < 3:
@@ -514,7 +523,7 @@ def add_pt(self, co3d):
         self.pt_cnt += 1
         self.menu.change_menu(self.pt_cnt)
         if self.pt_cnt > 1:
-            updatelock_pts(self, self.pts)
+            update_lock_pts(self, self.pts)
         set_mouse_highlight(self)
         ''' Begin Debug
         cnt = self.pt_cnt - 1
@@ -539,9 +548,9 @@ def rem_ref_pt(self, idx):
     for j in range(self.pt_cnt, 3):
         self.pts[j].co3d = None
     if self.pt_cnt > 1:
-        updatelock_pts(self, self.pts)
+        update_lock_pts(self, self.pts)
     else:
-        RotDat.axis_lock = None
+        TransDat.axis_lock = None
     self.highlight_mouse = True
 
 
@@ -617,10 +626,12 @@ def swap_ref_pts(self, pt1, pt2):
     self.pts[pt2].co3d = temp
 
 
-# For adding multi point without first needing a reference point
-# todo : clean up TempPoint so this function isn't needed
-# todo : find way to merge this with add_select_multi
 def new_select_multi(self):
+    '''
+    For adding multi point without first needing a reference point
+    '''
+    # todo : clean up TempPoint so this function isn't needed
+    # todo : find way to merge this with add_select_multi
     def enable_multi_mode(self):
         if self.grab_pt is not None:
             self.multi_tmp.__init__()
@@ -676,7 +687,7 @@ def exit_multi_mode(self):
     else:
         self.pts[self.mod_pt].co3d = m_co3d
         if self.pt_cnt > 1:
-            updatelock_pts(self, self.pts)
+            update_lock_pts(self, self.pts)
         set_mouse_highlight(self)
     self.mod_pt = None
     set_help_text(self, "CLICK")
@@ -714,10 +725,12 @@ def get_axis_line_co(p1, p2, x_max, y_max):
             if len(ln_pts) > 1: return ln_pts
 
 
-# Returns the closest object origin or vertex to the supplied 2D location
-# as 3D Vector.
-# Returns None if no found coordinate closer than minimum distance.
 def find_closest_point(loc):
+    '''
+    Returns the closest object origin or vertex to the supplied
+    2D location as a 3D Vector.
+    Returns None if no coordinates are found within the minimum distance.
+    '''
     region = bpy.context.region
     rv3d = bpy.context.region_data
     shortest_dist = 40.0  # minimum distance from loc
@@ -836,14 +849,14 @@ def set_arc_pts(ref_pts):
         temp.rotate(rot_val)
         arc_pts.append(temp + piv)
 
-    elif RotDat.axis_lock is not None:
-        #if RotDat.axis_lock == 'X':
+    elif TransDat.axis_lock is not None:
+        #if TransDat.axis_lock == 'X':
         #    rot_val = Euler((pi*2, 0.0, 0.0), 'XYZ')
-        if RotDat.axis_lock == 'X':
+        if TransDat.axis_lock == 'X':
             piv_norm = 1.0, 0.0, 0.0
-        elif RotDat.axis_lock == 'Y':
+        elif TransDat.axis_lock == 'Y':
             piv_norm = 0.0, 1.0, 0.0
-        elif RotDat.axis_lock == 'Z':
+        elif TransDat.axis_lock == 'Z':
             piv_norm = 0.0, 0.0, 1.0
         dis_p_f = (piv - fre).length
         dis_p_a = (piv - anc).length
@@ -862,36 +875,43 @@ def set_arc_pts(ref_pts):
             temp.rotate(rot_val)
             arc_pts.append(temp + piv)
 
-    RotDat.arc_pts = arc_pts
+    TransDat.arc_pts = arc_pts
 
 
-# Takes a ref_pts (ReferencePoints class) argument and modifies its member
-# variable lp_ls (lock pt list). The lp_ls variable is assigned a modified list
-# of 3D coordinates (if an axis lock was provided), the contents of the
-# ref_pts' rp_ls var (if no axis lock was provided), or an empty list (if there
-# wasn't enough ref_pts or there was a problem creating the modified list).
-# todo : move inside ReferencePoints class ?
 def set_lock_pts(ref_pts, pt_cnt):
+    '''
+    Takes a ref_pts (ReferencePoints class) argument and modifies
+    its member variable lp_ls (lock pt list). The lp_ls variable is
+    assigned a modified list of 3D coordinates (if an axis lock was
+    provided), the contents of the ref_pts' rp_ls var (if no axis
+    lock was provided), or an empty list (if there wasn't enough
+    ref_pts or there was a problem creating the modified list).
+    '''
+    # todo : move inside ReferencePoints class ?
     if pt_cnt < 2:
-        RotDat.lock_pts = []
-    elif RotDat.axis_lock is None:
-        RotDat.lock_pts = ref_pts
+        TransDat.lock_pts = []
+    elif TransDat.axis_lock is None:
+        TransDat.lock_pts = ref_pts
         if pt_cnt == 3:
             set_arc_pts(ref_pts)
 
 
-# end_a, piv_pt, and end_b are Vector based 3D coordinates
-# coordinates must share a common center "pivot" point (piv_pt)
 def get_line_ang_3d(end_a, piv_pt, end_b):
+    '''
+    end_a, piv_pt, and end_b are Vector based 3D coordinates
+    coordinates must share a common center "pivot" point (piv_pt)
+    '''
     algn_a = end_a - piv_pt
     algn_b = end_b - piv_pt
     return algn_a.angle(algn_b)
 
 
-# Checks if the 3 Vector coordinate arguments (end_a, piv_pt, end_b)
-# will create an angle with a measurement matching the value in the
-# argument exp_ang (expected angle measurement).
 def ang_match3d(end_a, piv_pt, end_b, exp_ang):
+    '''
+    Checks if the 3 Vector coordinate arguments (end_a, piv_pt, end_b)
+    will create an angle with a measurement matching the value in the
+    argument exp_ang (expected angle measurement).
+    '''
     ang_meas = get_line_ang_3d(end_a, piv_pt, end_b)
     #print("end_a", end_a)  # debug
     #print("piv_pt", piv_pt)  # debug
@@ -920,41 +940,45 @@ def create_z_orient(rot_vec):
                    (new_x.z, new_y.z, new_z.z)))
 
 
-# Updates lock points and changes curr_meas_stor to use measure based on
-# lock points instead of ref_pts (for axis constrained transformations).
-def updatelock_pts(self, ref_pts):
+def update_lock_pts(self, ref_pts):
+    '''
+    Updates lock points and changes curr_meas_stor to use measure based on
+    lock points instead of ref_pts (for axis constrained transformations).
+    '''
     global curr_meas_stor
     set_lock_pts(ref_pts, self.pt_cnt)
-    if RotDat.lock_pts == []:
-        if RotDat.axis_lock is not None:
-            self.report({'ERROR'}, 'Axis lock \''+ RotDat.axis_lock+
+    if TransDat.lock_pts == []:
+        if TransDat.axis_lock is not None:
+            self.report({'ERROR'}, 'Axis lock \''+ TransDat.axis_lock+
                     '\' creates identical points')
-        RotDat.lock_pts = ref_pts
-        RotDat.axis_lock = None
+        TransDat.lock_pts = ref_pts
+        TransDat.axis_lock = None
 
 
-# See if key was pressed that would require updating the axis lock info.
-# If one was, update the lock points to use new info.
 def axis_key_check(self, new_axis):
+    '''
+    See if key was pressed that would require updating the axis lock info.
+    If one was, update the lock points to use new info.
+    '''
     if self.pt_cnt == 1:
-        if new_axis != RotDat.axis_lock:
-            RotDat.axis_lock = new_axis
+        if new_axis != TransDat.axis_lock:
+            TransDat.axis_lock = new_axis
 
 
 def draw_rot_arc(colr):
     reg = bpy.context.region
     rv3d = bpy.context.region_data
-    len_arc_pts = len(RotDat.arc_pts)
+    len_arc_pts = len(TransDat.arc_pts)
     if len_arc_pts > 1:
-        last = loc3d_to_reg2d(reg, rv3d, RotDat.arc_pts[0])
+        last = loc3d_to_reg2d(reg, rv3d, TransDat.arc_pts[0])
         for p in range(1, len_arc_pts):
-            p2d = loc3d_to_reg2d(reg, rv3d, RotDat.arc_pts[p])
+            p2d = loc3d_to_reg2d(reg, rv3d, TransDat.arc_pts[p])
             draw_line_2d(last, p2d, Colr.white)
             last = p2d
 
 
-# Called when add-on mode changes and every time point is added or removed.
 def set_help_text(self, mode):
+    '''Called when add-on mode changes and every time point is added or removed.'''
     text = ""
     if mode == "CLICK":
         if self.pt_cnt == 0:
@@ -1031,18 +1055,18 @@ def draw_callback_px(self, context):
         rwid = context.region.width
         rhgt = context.region.height
         if self.pt_cnt == 1:
-            if RotDat.axis_lock is not None:
-                if self.running_transf is False:
+            if TransDat.axis_lock is not None:
+                if not self.running_transf:
                     self.rotate_btn.draw_btn(pts2d[0], self.mouse_co)
                     self.rotate_btn.is_drawn = True
 
-                if RotDat.axis_lock == 'X':
+                if TransDat.axis_lock == 'X':
                     test = self.pts[0].co3d + Vector((1, 0, 0))
                     colr = Colr.red
-                elif RotDat.axis_lock == 'Y':
+                elif TransDat.axis_lock == 'Y':
                     test = self.pts[0].co3d + Vector((0, 1, 0))
                     colr = Colr.green
-                elif RotDat.axis_lock == 'Z':
+                elif TransDat.axis_lock == 'Z':
                     test = self.pts[0].co3d + Vector((0, 0, 1))
                     colr = Colr.blue
 
@@ -1058,7 +1082,7 @@ def draw_callback_px(self, context):
                 blf.color(font_id, *colr)
                 blf.size(font_id, txt_sz, dpi)
                 blf.position(font_id, x_pos, y_pos, 0)
-                blf.draw(font_id, RotDat.axis_lock)
+                blf.draw(font_id, TransDat.axis_lock)
 
         elif self.pt_cnt == 2:
             axis_pts = get_axis_line_co(pts2d[0], pts2d[1], rwid, rhgt)
@@ -1073,7 +1097,7 @@ def draw_callback_px(self, context):
                     self.rotate_btn.draw_btn(btn_co, self.mouse_co)
                     self.rotate_btn.is_drawn = True
         elif self.pt_cnt == 3:
-            test = self.pts[2].co3d + RotDat.piv_norm
+            test = self.pts[2].co3d + TransDat.piv_norm
             t2d = loc3d_to_reg2d(reg, rv3d, test)
             axis_pts = get_axis_line_co(pts2d[2], t2d, rwid, rhgt)
             if axis_pts is not None:
@@ -1111,8 +1135,8 @@ def exit_addon(self):
     #print("\n\nAdd-On Exited\n")  # debug
 
 
-# Checks if "use_region_overlap" is enabled and X offset is needed.
 def get_reg_overlap():
+    '''Checks if "use_region_overlap" is enabled and X offset is needed.'''
     rtoolsw = 0  # region tools (toolbar) width
     #ruiw = 0  # region ui (Number/n-panel) width
     system = bpy.context.preferences.system
@@ -1191,42 +1215,43 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
             #===========================
             # Safely exit transform
             #===========================
-            if self.running_transf is True:
+            if self.running_transf:
                 self.running_transf = False
 
             #===================================
             # Check for click on Rotate Button
             #===================================
-            elif self.rotate_btn.is_drawn is True and \
-                    self.rotate_btn.ms_over is True:
+            elif self.rotate_btn.is_drawn and self.rotate_btn.ms_over:
                 #print("Button Clicked")
                 curs_loc = None
+                rot_axis = None
                 #bpy.ops.object.ms_input_dialog_op('INVOKE_DEFAULT')
                 if self.pt_cnt == 1:
-                    if RotDat.axis_lock == 'X':
+                    if TransDat.axis_lock == 'X':
                         rot_axis = Vector((1.0, 0.0, 0.0))
-                    elif RotDat.axis_lock == 'Y':
+                    elif TransDat.axis_lock == 'Y':
                         rot_axis = Vector((0.0, 1.0, 0.0))
-                    elif RotDat.axis_lock == 'Z':
+                    elif TransDat.axis_lock == 'Z':
                         # -1 because it is assumed most rotations
                         # will have negative z pointing down
                         rot_axis = Vector((0.0, 0.0, -1.0))
                     curs_loc = self.pts[0].co3d.copy()
                 elif self.pt_cnt == 2:
-                    #if RotDat.axis_lock is None:
+                    #if TransDat.axis_lock is None:
                     rot_vec = self.pts[1].co3d - self.pts[0].co3d
                     rot_axis = rot_vec.normalized()
                     curs_loc = self.pts[0].co3d.lerp(self.pts[1].co3d, 0.5)
                 elif self.pt_cnt == 3:
-                    #if RotDat.axis_lock is None:
-                    rot_axis = RotDat.piv_norm
+                    #if TransDat.axis_lock is None:
+                    rot_axis = TransDat.piv_norm
                     curs_loc = self.pts[2].co3d.copy()
                 o_mat = create_z_orient(rot_axis)
                 self.running_transf = True
                 bpy.context.tool_settings.transform_pivot_point = 'CURSOR'
                 bpy.context.scene.cursor.location = curs_loc
                 #bpy.ops.transform.rotate('INVOKE_DEFAULT', axis=rot_axis)
-                bpy.ops.transform.rotate('INVOKE_DEFAULT', orient_matrix=o_mat)
+                bpy.ops.transform.rotate('INVOKE_DEFAULT', orient_matrix=o_mat,
+                        orient_axis='Z', constraint_axis=(False, False, True))
 
             #===========================================
             # Check for click on "Add Selected" Button
@@ -1278,7 +1303,7 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
                             swap_ref_pts(self, self.grab_pt, self.swap_pt)
                             self.swap_pt = None
                     self.grab_pt = None
-                    updatelock_pts(self, self.pts)
+                    update_lock_pts(self, self.pts)
                     set_piv(self)
                 else:  # no grab or mod point
                     if self.shift_held:
@@ -1309,7 +1334,7 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
                                     self.pts[self.grab_pt].co3d = found_pt
                             self.grab_pt = None
                             if self.pt_cnt > 1:
-                                updatelock_pts(self, self.pts)
+                                update_lock_pts(self, self.pts)
                             set_mouse_highlight(self)
                             set_piv(self)
                             set_help_text(self, "CLICK")
@@ -1321,8 +1346,8 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
                                     self.pt_cnt += 1
                                     self.menu.change_menu(self.pt_cnt)
                                     if self.pt_cnt > 1:
-                                        RotDat.axis_lock = None
-                                        updatelock_pts(self, self.pts)
+                                        TransDat.axis_lock = None
+                                        update_lock_pts(self, self.pts)
                                         set_piv(self)
                                         #if self.pt_cnt
                                     set_mouse_highlight(self)
@@ -1342,7 +1367,7 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
                                 swap_ref_pts(self, self.grab_pt, self.overlap_idx)
                             self.grab_pt = None
                             if self.pt_cnt > 1:
-                                updatelock_pts(self, self.pts)
+                                update_lock_pts(self, self.pts)
                             set_mouse_highlight(self)
                             set_piv(self)
                             set_help_text(self, "CLICK")
@@ -1410,9 +1435,9 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
             axis_key_check(self, 'Z')
 
             '''
-            elif event.type == 'D' and event.value == 'RELEASE':
-                # open debug console
-                __import__('code').interact(local=dict(globals(), **locals()))
+        elif event.type == 'D' and event.value == 'RELEASE':
+            # open debug console
+            __import__('code').interact(local=dict(globals(), **locals()))
             '''
 
         elif event.type == 'G' and event.value == 'RELEASE':
@@ -1446,8 +1471,8 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
 
             # Add the region OpenGL drawing callback
             # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
-            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px,
-                    args, 'WINDOW', 'POST_PIXEL')
+            self._handle = bpy.types.SpaceView3D.draw_handler_add(
+                    draw_callback_px, args, 'WINDOW', 'POST_PIXEL')
 
             self.settings_backup = backup_blender_settings()
             self.mouse_co = Vector((event.mouse_region_x, event.mouse_region_y))
@@ -1481,8 +1506,9 @@ class XEDIT_OT_free_rotate(bpy.types.Operator):
 
             context.window_manager.modal_handler_add(self)
 
-            init_ref_pts(self)
             init_blender_settings()
+            init_ref_pts(self)
+            set_transform_data_none()
             editmode_refresh()
             #print("Add-on started")  # debug
             self.add_rm_btn.set_text("Add Selected")
